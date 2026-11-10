@@ -56,6 +56,8 @@ def reader(path, start, dur, vf):
 # "Snapchat-1628753313" has a music sticker bottom-right,
 # "Snapchat-934401401" has a caption on the left edge.
 def clean_for(path):
+    if "clean_" in path:  # already cleaned by clean_caption.py
+        return "null"
     if "1628753313" in path:
         return "split[a][b];[b]crop=182:165:356:1065,hflip,boxblur=3[p];[a][p]overlay=538:1065"
     return "split[a][b];[b]crop=90:210:90:805,hflip,boxblur=3[p];[a][p]overlay=0:805"
