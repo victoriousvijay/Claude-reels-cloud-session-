@@ -27,11 +27,13 @@ STACK_END = 1.6
 SHAB = ("SHABNAMI", 1.6)
 FLICKER_FROM = 2.0
 
-TYPED = [  # (lines with start times), block end
-    ([("DILRUBA", 4.0), ("DILNASHEEN", 4.55)], 6.15),
-    ([("BA-KHUDA", 6.25), ("TU", 6.95), ("HASEEN", 7.15)], 8.3),
-    ([("TERE", 8.35), ("JAISI", 8.7), ("HOOR", 9.1), ("NA", 9.4), ("KOI", 9.7)], DUR + 1),
+# Typed lyrics sit in the top band (face stays in the middle of the main clip).
+TYPED = [  # (lines -> [(word, start)]), block end
+    ([[("DILRUBA", 4.0)], [("DILNASHEEN", 4.55)]], 6.15),
+    ([[("BA-KHUDA", 6.25)], [("TU", 6.95), ("HASEEN", 7.15)]], 8.3),
+    ([[("TERE", 8.35), ("JAISI", 8.7)], [("HOOR", 9.1), ("NA", 9.4), ("KOI", 9.7)]], DUR + 1),
 ]
+TYPED_Y, TYPED_LH = 150, 125
 LETTER_DT = 0.06
 
 
@@ -49,23 +51,26 @@ def reader(path, start, dur, vf):
         yield last
 
 
-# CLIP1 = intro (hazy) clip, CLIP2 = main clip.
-# Snapchat crops: the "Snapchat-1628753313" clip has a music sticker bottom-right,
-# the "Snapchat-934401401" clip has a caption on the left edge.
-def crop_for(path):
-    return "604:1074:58:0" if "1628753313" in path else "640:1138:80:71"
+# CLIP1 = intro (hazy) clip, CLIP2 = main clip. Full frame is kept (no crop, so faces
+# are never cut); Snapchat overlays are painted out with delogo instead:
+# "Snapchat-1628753313" has a music sticker bottom-right,
+# "Snapchat-934401401" has a caption on the left edge.
+def clean_for(path):
+    if "1628753313" in path:
+        return "split[a][b];[b]crop=182:165:356:1065,hflip,boxblur=3[p];[a][p]overlay=538:1065"
+    return "split[a][b];[b]crop=90:210:90:805,hflip,boxblur=3[p];[a][p]overlay=0:805"
 
 
 SLOW2 = 1.25  # main clip is short (6.1s), stretch it to cover 3.5s -> 10.8s
-VF1 = f"crop={crop_for(CLIP1)},scale={W}:{H}:flags=lanczos,fps={FPS},eq=contrast=1.05:saturation=1.1"
-VF2 = (f"crop={crop_for(CLIP2)},setpts={SLOW2}*PTS,scale={W}:{H}:flags=lanczos,fps={FPS},"
+VF1 = f"{clean_for(CLIP1)},scale={W}:{H}:flags=lanczos,fps={FPS},eq=contrast=1.05:saturation=1.1"
+VF2 = (f"{clean_for(CLIP2)},setpts={SLOW2}*PTS,scale={W}:{H}:flags=lanczos,fps={FPS},"
        "eq=contrast=1.08:saturation=1.12,colorbalance=rm=0.05:gm=0.0:bm=-0.05")
 c1 = reader(CLIP1, 0.4, T_SWAP1 + 0.2, VF1)
 c2 = reader(CLIP2, 0.0, 30, VF2)
 
 BIG = ImageFont.truetype(FONT, 215)
 SHAB_F = ImageFont.truetype(FONT, 230)
-SMALL = ImageFont.truetype(FONT, 96)
+SMALL = ImageFont.truetype(FONT, 118)
 
 
 def ease(x):
@@ -136,23 +141,26 @@ def typed_text(t, base):
     """White lyrics typed letter-by-letter on the left."""
     block = None
     for lines, end in TYPED:
-        if lines[0][1] <= t < end:
+        if lines[0][0][1] <= t < end:
             block = lines
     if block is None:
         return base
     img = Image.new("L", (W, H), 0)
     d = ImageDraw.Draw(img)
-    cx, y, lh = 250, 820, 100
-    for word, ts in block:
-        n = int((t - ts) / LETTER_DT) + 1 if t >= ts else 0
-        part = word[:max(0, min(n, len(word)))]
-        if part:
-            x = cx - SMALL.getlength(word) / 2
-            d.text((x, y), part, font=SMALL, fill=255)
-        y += lh
+    y = TYPED_Y
+    for line in block:
+        full = " ".join(w for w, _ in line)
+        shown = []
+        for word, ts in line:
+            n = int((t - ts) / LETTER_DT) + 1 if t >= ts else 0
+            if n > 0:
+                shown.append(word[:min(n, len(word))])
+        if shown:
+            d.text(((W - SMALL.getlength(full)) / 2, y), " ".join(shown), font=SMALL, fill=255)
+        y += TYPED_LH
     shadow = np.asarray(img.filter(ImageFilter.GaussianBlur(10)), np.float32) / 255.0
     mask = np.asarray(img, np.float32) / 255.0
-    out = comp(base, shadow * 0.55, np.zeros(3, np.float32))
+    out = comp(base, shadow * 0.75, np.zeros(3, np.float32))
     return comp(out, mask, np.full(3, 248, np.float32))
 
 
@@ -195,7 +203,7 @@ for i in range(N):
         fa = intro_text(t, fa)
     if t >= T_SWAP0:
         b = next(c2).astype(np.float32)
-        z = 1.0 + 0.12 * (1 - ease((t - T_SWAP0) / 0.6))  # punch-in settle
+        z = 1.0 + 0.06 * (1 - ease((t - T_SWAP0) / 0.6))  # punch-in settle
         if z > 1.001:
             bi = Image.fromarray(b.astype(np.uint8)).resize((int(W * z), int(H * z)), Image.BILINEAR)
             ox, oy = (bi.width - W) // 2, (bi.height - H) // 2
