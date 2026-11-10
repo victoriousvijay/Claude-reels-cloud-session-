@@ -49,12 +49,19 @@ def reader(path, start, dur, vf):
         yield last
 
 
-# clip1: drop left-edge snapchat caption; clip2: drop bottom-right music sticker
-VF1 = f"crop=640:1138:80:71,scale={W}:{H}:flags=lanczos,fps={FPS},eq=contrast=1.05:saturation=1.1"
-VF2 = (f"crop=604:1074:58:0,scale={W}:{H}:flags=lanczos,fps={FPS},"
+# CLIP1 = intro (hazy) clip, CLIP2 = main clip.
+# Snapchat crops: the "Snapchat-1628753313" clip has a music sticker bottom-right,
+# the "Snapchat-934401401" clip has a caption on the left edge.
+def crop_for(path):
+    return "604:1074:58:0" if "1628753313" in path else "640:1138:80:71"
+
+
+SLOW2 = 1.25  # main clip is short (6.1s), stretch it to cover 3.5s -> 10.8s
+VF1 = f"crop={crop_for(CLIP1)},scale={W}:{H}:flags=lanczos,fps={FPS},eq=contrast=1.05:saturation=1.1"
+VF2 = (f"crop={crop_for(CLIP2)},setpts={SLOW2}*PTS,scale={W}:{H}:flags=lanczos,fps={FPS},"
        "eq=contrast=1.08:saturation=1.12,colorbalance=rm=0.05:gm=0.0:bm=-0.05")
-c1 = reader(CLIP1, 0.3, T_SWAP1 + 0.2, VF1)
-c2 = reader(CLIP2, 0.4, DUR - T_SWAP0 + 0.3, VF2)
+c1 = reader(CLIP1, 0.4, T_SWAP1 + 0.2, VF1)
+c2 = reader(CLIP2, 0.0, 30, VF2)
 
 BIG = ImageFont.truetype(FONT, 215)
 SHAB_F = ImageFont.truetype(FONT, 230)
